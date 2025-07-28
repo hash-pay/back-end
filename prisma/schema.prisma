@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id                   String            @id @default(uuid())
+  phoneNumber          String            @unique
+  pinHash              String // bcrypt-hashed PIN
+  hederaAccountId      String?           @unique
+  hederaPrivateKey     String? // encrypted
+  createdAt            DateTime          @default(now())
+  status               AccountStatus     @default(PENDING)
+  sentTransactions     Transaction[]     @relation("Sender")
+  receivedTransactions Transaction[]     @relation("Receiver")
+  withdrawals          Withdrawal[]
+  // Back-relations for transfer requests
+  sentTransfers        TransferRequest[] @relation("SentTransfers")
+  receivedTransfers    TransferRequest[] @relation("ReceivedTransfers")
+
+  @@index([phoneNumber]) // 🔥 this boosts lookup speed
+}
+
+model Transaction {
+  id         String @id @default(uuid())
+  fromUser   User   @relation("Sender", fields: [fromUserId], references: [id])
+  fromUserId String
+
+  toUser   User   @relation("Receiver", fields: [toUserId], references: [id])
+  toUserId String
+
+  amount      Float
+  tokenSymbol String // e.g. "USDC"
+  status      TxStatus  @default(QUEUED)
+  hash        String? // tx hash from Hedera after broadcasting
+  createdAt   DateTime  @default(now())
+  broadcastAt DateTime?
+  failReason  String?
+}
+
+model Withdrawal {
+  id     String @id @default(uuid())
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  amount      Float
+  method      String // "agent", "mpesa", "bank", etc.
+  status      WithdrawalStatus @default(PENDING)
+  requestedAt DateTime         @default(now())
+  completedAt DateTime?
+  failReason  String?
+}
+
+model TransferRequest {
+  id          String           @id @default(cuid())
+  senderId    String
+  recipientId String
+  amountMicro BigInt
+  status      WithdrawalStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  txHash      String?
+  errorMsg    String?
+
+  sender    User @relation("SentTransfers", fields: [senderId], references: [id])
+  recipient User @relation("ReceivedTransfers", fields: [recipientId], references: [id])
+}
+
+enum TxStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+enum WithdrawalStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum AccountStatus {
+  PENDING
+  ACTIVE
+  FAILED
+}
