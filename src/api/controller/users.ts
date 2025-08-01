@@ -13,6 +13,7 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import { decryptPrivateKey, encryptPrivateKey } from '../lib/encryption';
 import { hederaClient } from '../lib/hedera/client';
+import { sendAirtime } from '../lib/sendAirtime';
 
 export const registerUser = expressAsyncHandler(async (req, res) => {
   const { phoneNumber, pin } = req.body;
@@ -107,5 +108,16 @@ export const associateToken = expressAsyncHandler(async (req, res) => {
       message: 'Token association failed.',
       status: receipt.status.toString(),
     });
+  }
+});
+
+const number = '255625220627';
+export const buyAritime = expressAsyncHandler(async (req, res) => {
+  try {
+    const response = await sendAirtime({ phoneNumber: number, amount: 100 });
+
+    res.status(200).json(response);
+  } catch (error) {
+    res.status(500).json(error);
   }
 });

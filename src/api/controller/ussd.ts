@@ -6,6 +6,7 @@ import { getUserBalance } from '../lib/utils/balance';
 import { sendTokens } from '../lib/utils/sendTikens';
 import { createUserWallet } from '../lib/utils/registerUser';
 import { toMicroUnits } from '../lib/utils/formatCurrencies';
+import { sendAirtime } from '../lib/sendAirtime';
 
 export const handleUssdRequest = expressAsyncHandler(async (req, res) => {
   const { sessionId, phoneNumber, text } = req.body;
@@ -66,7 +67,13 @@ export const handleUssdRequest = expressAsyncHandler(async (req, res) => {
   // Step 0: Welcome Screen
   if (text === '') {
     res.send(
-      `CON Welcome to YamPay\n1. Check Balance\n2. Send Money\n3. My Wallet Address`,
+      `CON Welcome to YamPay
+1. Check Balance
+2. Send Money
+3. My Wallet Address
+4. Buy Airtime
+5. Pay for Goods
+6. Language Settings`,
     );
     return;
   }
@@ -116,10 +123,6 @@ export const handleUssdRequest = expressAsyncHandler(async (req, res) => {
       where: { phoneNumber: recipientPhone },
     });
 
-    /*if (!sender || !receiver) {
-      res.send(`END Invalid phone number.`);
-      return;
-    }*/
     if (!sender) {
       res.send(`END Your number is not registered.`);
       return;
@@ -165,6 +168,99 @@ export const handleUssdRequest = expressAsyncHandler(async (req, res) => {
       return;
     }
     res.send(`END Your wallet address is:\n${user.hederaAccountId}`);
+    return;
+  }
+
+  // Step 4.1: Buy Airtime – Ask for PIN
+  if (choice === '4' && level === 1) {
+    res.send(`CON Enter your 4-digit PIN:`);
+    return;
+  }
+
+  // Step 4.2: Ask if it's for own number or another
+  if (choice === '4' && level === 2) {
+    const pin = inputs[1];
+    const user = await prisma.user.findUnique({ where: { phoneNumber } });
+
+    const pinMatch = await bcrypt.compare(pin, user?.pinHash || '');
+    if (!pinMatch) {
+      res.send(`END Wrong PIN.`);
+      return;
+    }
+
+    res.send(`CON Buy for:
+1. My number
+2. Other number`);
+    return;
+  }
+
+  // Step 4.3: Ask for recipient number if Other
+  if (choice === '4' && level === 3 && inputs[2] === '2') {
+    res.send(`CON Enter recipient's phone number:`);
+    return;
+  }
+
+  // Step 4.4: Ask for amount
+  if (
+    choice === '4' &&
+    ((level === 3 && inputs[2] === '1') || // My number
+      level === 4) // Other number
+  ) {
+    res.send(`CON Enter amount of airtime in TZS:`);
+    return;
+  }
+
+  // Step 4.5: Final step – process airtime
+  if (
+    choice === '4' &&
+    ((inputs[2] === '1' && level === 4) || // My number
+      (inputs[2] === '2' && level === 5)) // Other number
+  ) {
+    const amount = inputs[inputs.length - 1];
+    const recipient = inputs[2] === '1' ? phoneNumber : inputs[3]; // If 'My number', use session phoneNumber
+
+    // Call Africa's Talking Airtime API here
+    const result = await sendAirtime({ phoneNumber: recipient, amount });
+
+    if (result.success) {
+      res.send(`END ✅ Airtime of TZS ${amount} sent to ${recipient}`);
+    } else {
+      res.send(`END ❌ Failed to send airtime. Try again later.`);
+    }
+    return;
+  }
+
+  // Step 4.1: Buy Airtime – Ask for PIN
+  if (choice === '5' && level === 1) {
+    res.send(`Enter Merchant ID (6 digits):`);
+    return;
+  }
+
+  if (choice === '5' && level === 2) {
+    const merchantId = inputs[1];
+
+    if (!/^\d{6}$/.test(merchantId)) {
+      res.send(`END ❌ Invalid Merchant ID. Must be 6 digits.`);
+      return;
+    }
+
+    // Simulate merchant lookup (we don't have merchant system yet)
+    const merchantExists = false;
+
+    if (!merchantExists) {
+      res.send(`END ❌ Merchant not found. Please try again later.`);
+      return;
+    }
+
+    // If valid merchant: ask for amount
+    res.send(`CON Enter amount to pay:`);
+    return;
+  }
+
+  if (choice === '6' && level === 1) {
+    res.send(`CON Choose Language:
+1. English
+2. Kiswahili`);
     return;
   }
 

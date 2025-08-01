@@ -1,5 +1,10 @@
 import express from 'express';
-import { associateToken, checkEnvs, registerUser } from '../controller/users';
+import {
+  associateToken,
+  buyAritime,
+  checkEnvs,
+  registerUser,
+} from '../controller/users';
 import {
   getWalletAddress,
   getWalletBalance,
@@ -14,5 +19,6 @@ router.route('/:userId/associate').post(associateToken);
 router.route('/:phoneNumber/address').get(getWalletAddress);
 router.route('/:phoneNumber/balance').get(getWalletBalance);
 router.route('/send').post(sendUSDC);
+router.route('/buy').post(buyAritime);
 
 export default router;
