@@ -232,7 +232,7 @@ export const handleUssdRequest = expressAsyncHandler(async (req, res) => {
 
   // Step 4.1: Buy Airtime – Ask for PIN
   if (choice === '5' && level === 1) {
-    res.send(`Enter Merchant ID (6 digits):`);
+    res.send(`CON Enter Merchant ID (6 digits):`);
     return;
   }
 
