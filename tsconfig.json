@@ -6,7 +6,8 @@
     "target": "ES6",
     "resolveJsonModule": true, // Add this line
     "esModuleInterop": true, // This is often helpful t
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true
   },
   "include": ["src/**/*"] // Include all files in the src folder
 }
