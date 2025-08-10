@@ -38,6 +38,8 @@ For a detailed walkthrough, watch this step-by-step video: [Watch Video](https:/
 
 YamPay is built with a focus on accessibility, security, and scalability.
 
+![YamPay Cover Image](https://cdn.dorahacks.io/static/files/198931fff64614aee49285a48baa7c66.png)
+
 - Backend: Node.js, Express.js
 - Blockchain Integration: Hedera Hashgraph SDK
 - USSD Gateway: Africa’s Talking API (Sandbox & Live)
