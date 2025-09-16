@@ -5,6 +5,8 @@ import {
   Client,
   AccountId,
 } from '@hashgraph/sdk';
+import dotenv from 'dotenv';
+dotenv.config();
 
 const operatorId = process.env.HEDERA_OPERATOR_ID;
 const operatorKey = process.env.HEDERA_OPERATOR_KEY;

@@ -8,83 +8,329 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ---------------- USERS ----------------
 model User {
-  id                   String            @id @default(uuid())
-  phoneNumber          String            @unique
-  pinHash              String // bcrypt-hashed PIN
-  hederaAccountId      String?           @unique
-  hederaPrivateKey     String? // encrypted
-  createdAt            DateTime          @default(now())
-  status               AccountStatus     @default(PENDING)
-  sentTransactions     Transaction[]     @relation("Sender")
-  receivedTransactions Transaction[]     @relation("Receiver")
-  withdrawals          Withdrawal[]
-  // Back-relations for transfer requests
-  sentTransfers        TransferRequest[] @relation("SentTransfers")
-  receivedTransfers    TransferRequest[] @relation("ReceivedTransfers")
+  id            String    @id @default(uuid())
+  walletAddress String?   @unique
+  name          String?
+  email         String?   @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  displayName   String?
+  avatarUrl     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
 
-  @@index([phoneNumber]) // 🔥 this boosts lookup speed
+  // relations
+  accounts   Account[]
+  apiKeys    ApiKey[]
+  servers    McpServer[]       @relation("CreatedServers")
+  tools      McpTool[]         @relation("UserTools")
+  payments   Payment[]
+  proofs     Proof[]
+  wallets    UserWallet[]
+  sessions   Session[]
+  ownerships ServerOwnership[] // user's ownerships
+  toolUsages ToolUsage[] // tool usage history
+
+  // back-reference for "OwnershipGrantedBy"
+  grantedOwnerships ServerOwnership[] @relation("OwnershipGrantedBy")
+
+  @@index([walletAddress])
+  @@index([email])
+  @@index([lastLoginAt])
 }
 
-model Transaction {
-  id         String @id @default(uuid())
-  fromUser   User   @relation("Sender", fields: [fromUserId], references: [id])
-  fromUserId String
+// ---------------- ACCOUNTS ----------------
+model Account {
+  id                    String    @id @default(uuid())
+  accountId             String    @unique
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  toUser   User   @relation("Receiver", fields: [toUserId], references: [id])
-  toUserId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  amount      Float
-  tokenSymbol String // e.g. "USDC"
-  status      TxStatus  @default(QUEUED)
-  hash        String? // tx hash from Hedera after broadcasting
+  @@index([userId])
+  @@index([providerId])
+}
+
+// ---------------- API KEYS ----------------
+model ApiKey {
+  id          String    @id @default(uuid())
+  userId      String
+  keyHash     String    @unique
+  name        String
+  permissions String[]
   createdAt   DateTime  @default(now())
-  broadcastAt DateTime?
-  failReason  String?
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  active      Boolean   @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([active])
+  @@index([expiresAt])
 }
 
-model Withdrawal {
-  id     String @id @default(uuid())
-  user   User   @relation(fields: [userId], references: [id])
-  userId String
+// ---------------- MCP SERVERS ----------------
+model McpServer {
+  id              String   @id @default(uuid())
+  serverId        String   @unique
+  mcpOrigin       String   @unique
+  creatorId       String?
+  receiverAddress String
+  requireAuth     Boolean  @default(false)
+  authHeaders     Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  status          String   @default("active")
+  name            String?
+  description     String?
+  metadata        Json?
 
-  amount      Float
-  method      String // "agent", "mpesa", "bank", etc.
-  status      WithdrawalStatus @default(PENDING)
-  requestedAt DateTime         @default(now())
-  completedAt DateTime?
-  failReason  String?
+  creator    User?             @relation("CreatedServers", fields: [creatorId], references: [id], onDelete: SetNull)
+  tools      McpTool[]
+  ownerships ServerOwnership[]
+  proofs     Proof[]
+  webhooks   Webhook[]
+
+  @@index([status])
+  @@index([creatorId])
+  @@index([createdAt])
+  @@index([mcpOrigin])
+  @@index([status, createdAt])
 }
 
-model TransferRequest {
-  id          String           @id @default(cuid())
-  senderId    String
-  recipientId String
-  amountMicro BigInt
-  status      WithdrawalStatus @default(PENDING)
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  txHash      String?
-  errorMsg    String?
+// ---------------- MCP TOOLS ----------------
+model McpTool {
+  id           String   @id @default(uuid())
+  serverId     String
+  userId       String?
+  name         String
+  description  String
+  inputSchema  Json?
+  outputSchema Json     @default("{}")
+  isMonetized  Boolean  @default(false)
+  pricing      Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  status       String   @default("active")
+  metadata     Json?
 
-  sender    User @relation("SentTransfers", fields: [senderId], references: [id])
-  recipient User @relation("ReceivedTransfers", fields: [recipientId], references: [id])
+  server   McpServer   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  payments Payment[]
+  proofs   Proof[]
+  usage    ToolUsage[]
+  user     User?       @relation("UserTools", fields: [userId], references: [id])
+
+  @@index([serverId])
+  @@index([name])
+  @@index([status])
+  @@index([serverId, name])
+  @@index([isMonetized])
 }
 
-enum TxStatus {
-  QUEUED
-  SENT
-  FAILED
+// ---------------- PAYMENTS ----------------
+model Payment {
+  id              String    @id @default(uuid())
+  toolId          String
+  userId          String?
+  amountRaw       Decimal
+  tokenDecimals   Int
+  currency        String
+  network         String
+  transactionHash String?   @unique
+  status          String    @default("pending")
+  createdAt       DateTime  @default(now())
+  settledAt       DateTime?
+  signature       String?
+  paymentData     Json?
+
+  tool McpTool @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  user User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([toolId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([network])
+  @@index([toolId, userId])
 }
 
-enum WithdrawalStatus {
-  PENDING
-  COMPLETED
-  FAILED
+// ---------------- PROOFS ----------------
+model Proof {
+  id                       String    @id @default(uuid())
+  toolId                   String
+  serverId                 String
+  userId                   String?
+  isConsistent             Boolean
+  confidenceScore          Decimal   @db.Decimal(3, 2)
+  executionUrl             String?
+  executionMethod          String?
+  executionHeaders         Json?
+  executionParams          Json
+  executionResult          Json
+  executionTimestamp       DateTime
+  aiEvaluation             String
+  inconsistencies          Json?
+  webProofPresentation     String?
+  notaryUrl                String?
+  proofMetadata            Json?
+  replayExecutionResult    Json?
+  replayExecutionTimestamp DateTime?
+  status                   String    @default("verified")
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  verificationType         String    @default("execution")
+
+  tool   McpTool   @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  server McpServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user   User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([toolId])
+  @@index([serverId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([isConsistent])
+  @@index([confidenceScore])
+  @@index([verificationType])
+  @@index([toolId, createdAt])
+  @@index([serverId, isConsistent])
 }
 
-enum AccountStatus {
-  PENDING
-  ACTIVE
-  FAILED
+// ---------------- SERVER OWNERSHIP ----------------
+model ServerOwnership {
+  id        String   @id @default(uuid())
+  serverId  String
+  userId    String
+  role      String   @default("viewer")
+  createdAt DateTime @default(now())
+  grantedBy String?
+  active    Boolean  @default(true)
+
+  server        McpServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grantedByUser User?     @relation("OwnershipGrantedBy", fields: [grantedBy], references: [id], onDelete: SetNull)
+
+  @@unique([serverId, userId])
+  @@index([serverId])
+  @@index([userId])
+  @@index([active])
+}
+
+// ---------------- SESSION ----------------
+model Session {
+  id        String   @id @default(uuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+// ---------------- TOOL USAGE ----------------
+model ToolUsage {
+  id              String   @id @default(uuid())
+  toolId          String
+  timestamp       DateTime @default(now())
+  userId          String?
+  requestData     Json?
+  responseStatus  String?
+  executionTimeMs Int?
+  ipAddress       String?
+  userAgent       String?
+  result          Json?
+
+  tool McpTool @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  user User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([toolId])
+  @@index([userId])
+  @@index([timestamp])
+  @@index([responseStatus])
+  @@index([toolId, timestamp])
+}
+
+// ---------------- USER WALLETS ----------------
+model UserWallet {
+  id               String    @id @default(uuid())
+  userId           String
+  walletAddress    String
+  walletType       String
+  provider         String?
+  blockchain       String?
+  architecture     String?
+  isPrimary        Boolean   @default(false)
+  isActive         Boolean   @default(true)
+  walletMetadata   Json?
+  externalWalletId String?
+  externalUserId   String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  lastUsedAt       DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, walletAddress, provider, walletType])
+  @@index([userId])
+  @@index([walletAddress])
+  @@index([walletType])
+  @@index([blockchain])
+  @@index([architecture])
+  @@index([isPrimary])
+  @@index([isActive])
+  @@index([provider])
+  @@index([externalWalletId])
+}
+
+// ---------------- VERIFICATION ----------------
+model Verification {
+  id         String   @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@index([expiresAt])
+}
+
+// ---------------- WEBHOOKS ----------------
+model Webhook {
+  id              String    @id @default(uuid())
+  serverId        String
+  url             String
+  secret          String?
+  events          String[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  active          Boolean   @default(true)
+  lastTriggeredAt DateTime?
+  failureCount    Int       @default(0)
+
+  server McpServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId])
+  @@index([active])
+  @@index([failureCount])
 }
